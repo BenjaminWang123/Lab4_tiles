@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SF Vision Zero | Traffic Tiles (GEOG 458 Lab 4)</title>
+<meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.18.1/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.18.1/mapbox-gl.js"></script>
+
+<style>
+  body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+
+  #header {
+    background: #111;
+    color: #fff;
+    padding: 12px 16px;
+  }
+  #header h2 { margin: 0; font-size: 18px; }
+  #header p { margin: 6px 0 0; font-size: 13px; opacity: 0.9; }
+
+  /* wrapper gives positioning context for overlays */
+  #map-wrap { position: relative; }
+  #map { height: 75vh; width: 100%; }
+
+  #desc {
+    background: #f4f4f4;
+    padding: 12px 16px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  /* tabs UI */
+  #tabs {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 2;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    max-width: calc(100% - 24px);
+  }
+  .tabbtn {
+    border: 1px solid rgba(0,0,0,0.15);
+    background: rgba(255,255,255,0.92);
+    padding: 7px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 13px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+    user-select: none;
+  }
+  .tabbtn.active {
+    background: rgba(17,17,17,0.92);
+    color: #fff;
+    border-color: rgba(255,255,255,0.25);
+  }
+
+  /* info panel (description + legend) */
+  #infobox{
+    position: absolute;
+    top: 56px;
+    right: 12px;
+    z-index: 2;
+    width: 300px;
+    max-height: calc(75vh - 68px);
+    overflow: auto;
+    background: rgba(255,255,255,0.94);
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+  }
+  #info-title { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+  #info-desc p { margin: 8px 0; }
+
+  /* legend toggle */
+  #legend-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border: 1px solid rgba(0,0,0,0.12);
+    background: rgba(245,245,245,0.9);
+    padding: 8px 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 13px;
+    margin-top: 10px;
+  }
+  #legend-content { margin-top: 10px; }
+  .hidden { display: none; }
+
+  .leg-row { display:flex; align-items:center; margin:6px 0; gap:8px; }
+  .swatch{
+    width:14px; height:14px; border-radius:3px;
+    border:1px solid rgba(0,0,0,0.25);
+    flex: 0 0 auto;
+  }
+  .gradient-bar {
+    height: 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(0,0,0,0.18);
+    background: linear-gradient(to right, #ffffff, #ffd1d1, #ff5a5a);
+    margin: 6px 0 4px;
+  }
+
+  /* small “toast” popup for layer changes (optional, but nice) */
+  #toast {
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+    background: rgba(17,17,17,0.9);
+    color: #fff;
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    max-width: min(640px, calc(100% - 24px));
+  }
+  #toast.show { opacity: 1; }
+
+  /* mobile: make infobox smaller */
+  @media (max-width: 720px){
+    #infobox { width: 240px; }
+  }
+</style>
+</head>
+
+<body>
+
+<div id="header">
+  <h2>San Francisco Vision Zero Traffic Safety Map</h2>
+  <p>GEOG 458 Lab 4 — Raster tilesets: basemap, crash layer, combined map, and Vision Zero theme</p>
+</div>
+
+<div id="map-wrap">
+  <div id="map"></div>
+
+  <!-- Tabs (replaces radio buttons) -->
+  <div id="tabs" role="tablist" aria-label="Layer tabs">
+    <button class="tabbtn" data-layer="tile1" type="button">Tile 1 · Basemap</button>
+    <button class="tabbtn" data-layer="tile2" type="button">Tile 2 · Crashes</button>
+    <button class="tabbtn" data-layer="tile3" type="button">Tile 3 · Combined</button>
+    <button class="tabbtn active" data-layer="tile4" type="button">Tile 4 · Vision Zero</button>
+  </div>
+
+  <!-- Info + Legend panel -->
+  <div id="infobox">
+    <div id="info-title">Layer info</div>
+    <div id="info-desc"></div>
+
+    <button id="legend-toggle" type="button" aria-expanded="true">
+      <span><strong>Legend</strong></span>
+      <span id="legend-caret">▾</span>
+    </button>
+    <div id="legend-content"></div>
+  </div>
+
+  <div id="toast"></div>
+</div>
+
+<div id="desc">
+  <strong>Map description:</strong> This project visualizes San Francisco traffic safety using a Vision Zero-inspired theme.
+  Pedestrian roads are emphasized, major roads are highlighted, and key institutions (e.g., universities) are symbolized.
+  <br><br>
+  <strong>Data:</strong> Traffic crashes resulting in injury (2025 subset) from
+  <a href="https://data.sfgov.org/Public-Safety/Traffic-Crashes-Resulting-in-Injury/ubvf-ztfx/about_data" target="_blank" rel="noopener">DataSF (processed in QGIS)</a>.
+  <br>
+  <strong>Design:</strong> Custom Mapbox style with color + labels to reinforce the traffic safety theme.
+  <br>
+  <strong>Author:</strong> Benni Wang
+</div>
+
+<script>
+  mapboxgl.accessToken = 'pk.eyJ1IjoiYmVubmk2NjYiLCJhIjoiY21sbmV2Z2R3MHI3bDNmcTBpMTF6bGdnbyJ9.2HZyhvOHbeVobbn0kT7K3g';
+
+  const map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/light-v11',
+    center: [-122.42, 37.77],
+    zoom: 11
+  });
+
+  map.addControl(new mapboxgl.NavigationControl());
+  map.addControl(new mapboxgl.ScaleControl({ maxWidth: 100, unit: 'metric' }));
+
+  // Robust base path (works whether hosted at repo root or inside subfolder)
+  const base = new URL('.', window.location.href).toString();
+
+  // ✅ Edit these descriptions + legend swatches to match YOUR tiles exactly
+  const LAYER_INFO = {
+    tile1: {
+      title: "Tile 1 — Basemap",
+      toast: "Basemap only: clean context for SF streets + neighborhoods.",
+      desc: `
+        <p><strong>Purpose:</strong> Provides geographic context before adding safety layers.</p>
+        <p><strong>How to use it:</strong> Compare where hotspots occur relative to downtown, major corridors, and the coastline.</p>
+      `,
+      legend: `
+        <div class="leg-row"><span class="swatch" style="background:#f2f2f2"></span><span>Land background</span></div>
+        <div class="leg-row"><span class="swatch" style="background:#cfcfcf"></span><span>Urban texture</span></div>
+        <div class="leg-row"><span class="swatch" style="background:#ffffff"></span><span>Water</span></div>
+      `
+    },
+    tile2: {
+      title: "Tile 2 — Traffic crashes",
+      toast: "Crash intensity only: quickly identify hotspots.",
+      desc: `
+        <p><strong>Purpose:</strong> Isolates injury-crash patterns (2025 subset) without other distractions.</p>
+        <p><strong>Reading tip:</strong> Stronger color/intensity means higher crash concentration.</p>
+      `,
+      legend: `
+        <div><strong>Crash intensity</strong></div>
+        <div class="gradient-bar" title="Low to High"></div>
+        <div style="display:flex; justify-content:space-between; font-size:12px; opacity:0.85;">
+          <span>Low</span><span>High</span>
+        </div>
+        <div style="margin-top:8px; font-size:12px; opacity:0.9;">
+          (If your crash tile is NOT a heat surface, replace this with point/line legend.)
+        </div>
+      `
+    },
+    tile3: {
+      title: "Tile 3 — Combined (basemap + crashes)",
+      toast: "Combined view: link hotspots to the street network.",
+      desc: `
+        <p><strong>Purpose:</strong> Lets you interpret crash hotspots with street context.</p>
+        <p><strong>What to look for:</strong> Hotspots along arterials, near intersections, and around high-activity areas.</p>
+      `,
+      legend: `
+        <div class="leg-row"><span class="swatch" style="background:#d9d9d9"></span><span>Context basemap</span></div>
+        <div class="leg-row"><span class="swatch" style="background:#ffb3b3"></span><span>Crash overlay (medium)</span></div>
+        <div class="leg-row"><span class="swatch" style="background:#ff3b3b"></span><span>Crash overlay (high)</span></div>
+      `
+    },
+    tile4: {
+      title: "Tile 4 — Vision Zero theme",
+      toast: "Vision Zero theme: emphasizes pedestrian safety + priority corridors.",
+      desc: `
+        <p><strong>Purpose:</strong> A narrative cartographic design inspired by Vision Zero.</p>
+        <p><strong>Design choices:</strong> Pedestrian streets are emphasized, major roads are highlighted, and key institutions are symbolized.</p>
+        <p><strong>Goal:</strong> Make the safety story readable “at a glance.”</p>
+      `,
+      legend: `
+        <div class="leg-row"><span class="swatch" style="background:#ffe08a"></span><span>Major roads / priority corridors</span></div>
+        <div class="leg-row"><span class="swatch" style="background:#9bd1ff"></span><span>Pedestrian-focused streets</span></div>
+        <div class="leg-row"><span class="swatch" style="background:#111"></span><span>Key institutions</span></div>
+      `
+    }
+  };
+
+  // ---- UI helpers ----
+  const toastEl = document.getElementById('toast');
+  let toastTimer = null;
+
+  function showToast(text) {
+    toastEl.textContent = text || "";
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1600);
+  }
+
+  function setActiveTab(layerId) {
+    document.querySelectorAll('.tabbtn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.layer === layerId);
+    });
+  }
+
+  function updateInfoPanel(layerId) {
+    const info = LAYER_INFO[layerId];
+    document.getElementById('info-title').textContent = info?.title || "Layer info";
+    document.getElementById('info-desc').innerHTML = info?.desc || "";
+    document.getElementById('legend-content').innerHTML = info?.legend || "";
+    if (info?.toast) showToast(info.toast);
+  }
+
+  // Collapsible legend
+  const legendToggle = document.getElementById('legend-toggle');
+  const legendContent = document.getElementById('legend-content');
+  const legendCaret = document.getElementById('legend-caret');
+
+  legendToggle.addEventListener('click', () => {
+    const isHidden = legendContent.classList.toggle('hidden');
+    legendToggle.setAttribute('aria-expanded', String(!isHidden));
+    legendCaret.textContent = isHidden ? '▸' : '▾';
+  });
+
+  // ---- Map logic ----
+  function addRasterTileset(sourceId, layerId, tileRelPath, visible=false) {
+    map.addSource(sourceId, {
+      type: 'raster',
+      tiles: [base + tileRelPath],
+      tileSize: 256,
+      attribution: 'Map tiles designed by Benni Wang | © Mapbox © OpenStreetMap'
+    });
+
+    map.addLayer({
+      id: layerId,
+      type: 'raster',
+      source: sourceId,
+      layout: { visibility: visible ? 'visible' : 'none' },
+      paint: {
+        'raster-resampling': 'linear',
+        'raster-opacity': 1
+      }
+    });
+  }
+
+  function showOnly(layerId) {
+    ['tile1','tile2','tile3','tile4'].forEach(id => {
+      if (map.getLayer(id)) {
+        map.setLayoutProperty(id, 'visibility', (id === layerId) ? 'visible' : 'none');
+      }
+    });
+    setActiveTab(layerId);
+    updateInfoPanel(layerId);
+  }
+
+  map.on('load', () => {
+    addRasterTileset('tileset_1', 'tile1', 'assets/tileset_1/{z}/{x}/{y}.png', false);
+    addRasterTileset('tileset_2', 'tile2', 'assets/tileset_2/{z}/{x}/{y}.png', false);
+    addRasterTileset('tileset_3', 'tile3', 'assets/tileset_3/{z}/{x}/{y}.png', false);
+    addRasterTileset('tileset_4', 'tile4', 'assets/tileset_4/{z}/{x}/{y}.png', true);
+
+    // default layer = tile4
+    showOnly('tile4');
+
+    // tab click handlers
+    document.querySelectorAll('.tabbtn').forEach(btn => {
+      btn.addEventListener('click', () => showOnly(btn.dataset.layer));
+    });
+
+    // optional: clicking map re-shows current layer info (nice for demo)
+    map.on('click', () => {
+      const activeBtn = document.querySelector('.tabbtn.active');
+      const layerId = activeBtn ? activeBtn.dataset.layer : 'tile4';
+      updateInfoPanel(layerId);
+    });
+  });
+
+  // helpful debugging
+  map.on('error', (e) => {
+    if (e?.error?.message) console.warn('Map error:', e.error.message);
+  });
+</script>
+
+</body>
+</html>
